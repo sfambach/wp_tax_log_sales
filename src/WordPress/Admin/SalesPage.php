@@ -99,10 +99,19 @@ final class SalesPage
                     is_array($_POST['material'] ?? null) ? wp_unslash($_POST['material']) : [],
                     ! empty($_POST['same_article'])
                 )]),
-                'book'   => self::url(['tab' => $tab, 'msg' => 'booked', 'n' => $this->service->book(absint($_POST['sale'] ?? 0)) > 0 ? 1 : 0]),
+                'book'     => self::url(['tab' => $tab, 'msg' => 'booked', 'n' => $this->service->book(absint($_POST['sale'] ?? 0)) > 0 ? 1 : 0]),
+                'unassign' => $this->done(fn () => $this->service->unassign(absint($_POST['item'] ?? 0)), $tab, 'unassigned'),
+                'cancel'   => $this->done(fn () => $this->service->cancel(absint($_POST['sale'] ?? 0), wp_get_current_user()->display_name), $tab, 'cancelled'),
                 default  => ListPage::fail(__('Unbekannte Aktion.', 'taxmod-sales')),
             };
         }, $back);
+    }
+
+    private function done(callable $work, string $tab, string $message): string
+    {
+        $work();
+
+        return self::url(['tab' => $tab, 'msg' => $message]);
     }
 
     /** @param list<Sale> $shown */
@@ -153,7 +162,12 @@ final class SalesPage
                 default                 => __('ohne Material', 'taxmod-sales'),
             };
             $html .= '<li>' . esc_html(self::quantity($item->count) . ' × ' . $item->label . ' — ' . $state)
-                . ($item->isBooked() ? '' : ' ' . $this->assignAction($item, $tab)) . '</li>';
+                . match (true) {
+                    $item->isBooked()        => '',
+                    $item->material !== null => ' ' . $this->postButton(['do' => 'unassign', 'item' => $item->id, 'tab' => $tab], __('Zuordnung lösen', 'taxmod-sales'),
+                        __('Material dieses Artikels wieder entfernen?', 'taxmod-sales')),
+                    default                  => ' ' . $this->assignAction($item, $tab),
+                } . '</li>';
         }
 
         return $html . '</ul>';
@@ -177,17 +191,37 @@ final class SalesPage
 
     private function bookButton(Sale $sale, string $tab): string
     {
-        if ($sale->state() !== Sale::TO_BOOK || ! $this->service->canBook()) {
+        if (! $this->service->canBook()) {
             return '';
         }
 
-        return '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" ' . ListPage::confirm(sprintf(
+        return match ($sale->state()) {
             /* translators: %s: the sale's number */
-            __('Verkauf %s buchen? Fehlender Bestand wird zum Verkaufsdatum nacherfasst.', 'taxmod-sales'), $sale->number)) . '>'
-            . wp_nonce_field(self::NONCE, '_wpnonce', true, false)
-            . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '"><input type="hidden" name="do" value="book">'
-            . '<input type="hidden" name="sale" value="' . esc_attr((string) $sale->id) . '"><input type="hidden" name="tab" value="' . esc_attr($tab) . '">'
-            . '<button type="submit" class="button">' . esc_html__('Buchen', 'taxmod-sales') . '</button></form>';
+            Sale::TO_BOOK => $this->postButton(['do' => 'book', 'sale' => $sale->id, 'tab' => $tab], __('Buchen', 'taxmod-sales'),
+                sprintf(__('Verkauf %s buchen? Fehlender Bestand wird zum Verkaufsdatum nacherfasst.', 'taxmod-sales'), $sale->number)),
+            /* translators: %s: the sale's number */
+            Sale::BOOKED  => $this->postButton(['do' => 'cancel', 'sale' => $sale->id, 'tab' => $tab], __('Buchung zurücknehmen', 'taxmod-sales'),
+                sprintf(__('Buchung von Verkauf %s zurücknehmen? Warenausgang und Nacherfassung werden storniert.', 'taxmod-sales'), $sale->number)),
+            default       => '',
+        };
+    }
+
+    /**
+     * A one-button form that asks first in the shared dialog (K3) and posts to this page's handler.
+     *
+     * @param array<string, string|int> $fields
+     */
+    private function postButton(array $fields, string $label, string $question): string
+    {
+        $hidden = '';
+
+        foreach ($fields as $name => $value) {
+            $hidden .= '<input type="hidden" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '">';
+        }
+
+        return '<form method="post" class="taxmod-acts" action="' . esc_url(admin_url('admin-post.php')) . '" ' . ListPage::confirm($question) . '>'
+            . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . $hidden
+            . '<button type="submit" class="button">' . esc_html($label) . '</button></form>';
     }
 
     private function stockNotice(): string
@@ -204,6 +238,8 @@ final class SalesPage
             /* translators: %d: number of sold items */
             'assigned' => '<div class="notice notice-success inline"><p>' . esc_html(sprintf(_n('Material an %d Artikel zugeordnet.', 'Material an %d Artikel zugeordnet.', $n, 'taxmod-sales'), $n)) . '</p></div>',
             /* translators: %d: number of sales */
+            'unassigned' => '<div class="notice notice-success inline"><p>' . esc_html__('Zuordnung gelöst.', 'taxmod-sales') . '</p></div>',
+            'cancelled'  => '<div class="notice notice-success inline"><p>' . esc_html__('Buchung zurückgenommen.', 'taxmod-sales') . '</p></div>',
             'booked'   => '<div class="notice notice-success inline"><p>' . esc_html(sprintf(_n('%d Verkauf gebucht.', '%d Verkäufe gebucht.', $n, 'taxmod-sales'), $n)) . '</p></div>',
             default    => '',
         };

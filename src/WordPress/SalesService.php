@@ -20,6 +20,7 @@ final class SalesService
     public const LOTS_OF = 'taxmod_stock_lots_of';
     public const BOOK_BACKFILL = 'taxmod_stock_book_backfill';
     public const BOOK_SALE = 'taxmod_stock_book_sale';
+    public const CANCEL_SALE = 'taxmod_stock_cancel_sale';
 
     private ?Structure $structure = null;
 
@@ -100,6 +101,31 @@ final class SalesService
         return count($items);
     }
 
+    /** Takes an item's material back (V1); a booked item keeps it until its booking is taken back. */
+    public function unassign(int $item): void
+    {
+        $this->model->write([['op' => 'set_values', 'record' => (string) $item, 'values' => [(string) $this->structure()->field('item_material') => '']]]);
+        $this->sales = null;
+    }
+
+    /**
+     * Takes a sale's booking back (V1, V2: a Storno at the stock, nothing deleted): the goods issue and the lots recorded for it
+     * are cancelled, the items forget their lot.
+     */
+    public function cancel(int $saleId, string $who): void
+    {
+        if (! has_filter(self::CANCEL_SALE)) {
+            throw SalesError::noStockModule();
+        }
+
+        $sale = $this->sale($saleId);
+        $this->stock(self::CANCEL_SALE, ['sale' => $sale->id, 'who' => $who]);
+        $relation = $this->structure()->field('item_lot');
+        $this->model->write(array_values(array_map(static fn ($item): array => ['op' => 'set_values', 'record' => (string) $item->id, 'values' => [(string) $relation => '']],
+            array_filter($sale->items, static fn ($item): bool => $item->isBooked()))));
+        $this->sales = null;
+    }
+
     /** Whether the stock module offers the bookings a sale needs. */
     public function canBook(): bool
     {
@@ -118,8 +144,7 @@ final class SalesService
 
         $sale      = $this->sale($saleId);
         $materials = array_values(array_unique(array_filter(array_map(static fn ($item): ?int => $item->material, $sale->items))));
-        $lots      = $this->stock(self::LOTS_OF, ['materials' => $materials]);
-        $plan      = BookingPlan::of($sale, is_array($lots) ? $lots : []);
+        $plan      = BookingPlan::of($sale, self::lotList($this->stock(self::LOTS_OF, ['materials' => $materials])));
 
         foreach ($plan as $i => $line) {
             if ($line['lot'] === null) {
@@ -132,7 +157,7 @@ final class SalesService
 
         $issue = (int) $this->stock(self::BOOK_SALE, [
             'sale'  => $sale->id,
-            'lines' => array_map(static fn (array $line): array => ['lot' => $line['lot'], 'quantity' => $line['count']], $plan),
+            'lines' => self::issueLines($plan),
             'date'  => $sale->day(),
             'title' => sprintf(__('Verkauf %s', 'taxmod-sales'), $sale->number),
         ]);
@@ -141,6 +166,42 @@ final class SalesService
         $this->sales = null;
 
         return $issue;
+    }
+
+    /**
+     * The stock's answer «material → lot → rest, oldest first» as the plan reads it.
+     *
+     * @param mixed $answer `mixed`: a filter's
+     * @return array<int, list<array{lot: int, rest: float}>>
+     */
+    private static function lotList(mixed $answer): array
+    {
+        $out = [];
+
+        foreach (is_array($answer) ? $answer : [] as $material => $lots) {
+            foreach (is_array($lots) ? $lots : [] as $lot => $rest) {
+                $out[(int) $material][] = ['lot' => (int) $lot, 'rest' => (float) $rest];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Lot → pieces, as the stock books a goods issue; two items from one lot add up.
+     *
+     * @param list<array{item: int, material: int, count: float, lot: int|null}> $plan
+     * @return array<int, string>
+     */
+    private static function issueLines(array $plan): array
+    {
+        $lines = [];
+
+        foreach ($plan as $line) {
+            $lines[(int) $line['lot']] = ($lines[(int) $line['lot']] ?? 0.0) + $line['count'];
+        }
+
+        return array_map(static fn (float $pieces): string => (string) $pieces, $lines);
     }
 
     /**

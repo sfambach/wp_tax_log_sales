@@ -10,7 +10,9 @@ Sales for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modele
 - **Buchen**: each item leaves the oldest lot of its material that still holds it. Where no lot does — sales from before the
   stock was kept — a lot is recorded first («Nacherfassung», on the day of the sale) and the item leaves that one (D-1260).
   The bookings go through Taxmod Stock (filters `taxmod_stock_lots_of`, `taxmod_stock_book_backfill`,
-  `taxmod_stock_book_sale`); the lot is written to the item.
+  `taxmod_stock_book_sale`, Taxmod Stock 0.64.27); the lot is written to the item.
+- Every step can be taken back (D-1010): «Zuordnung lösen» empties an item's material, «Buchung zurücknehmen» cancels the
+  goods issue and its recorded lots at the stock (`taxmod_stock_cancel_sale`, a Storno) and empties the items' lots.
 
 Concept and decisions: [`docs/pakete/verkauf/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/verkauf/konzept.md),
 D-1260 in the modeller's decision log.
