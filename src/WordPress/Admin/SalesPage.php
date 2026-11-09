@@ -201,7 +201,7 @@ final class SalesPage
                 sprintf(__('Verkauf %s buchen? Fehlender Bestand wird zum Verkaufsdatum nacherfasst.', 'taxmod-sales'), $sale->number)),
             /* translators: %s: the sale's number */
             Sale::BOOKED  => $this->postButton(['do' => 'cancel', 'sale' => $sale->id, 'tab' => $tab], __('Buchung zurücknehmen', 'taxmod-sales'),
-                sprintf(__('Buchung von Verkauf %s zurücknehmen? Warenausgang und Nacherfassung werden storniert.', 'taxmod-sales'), $sale->number)),
+                sprintf(__('Buchung von Verkauf %s zurücknehmen? Der Warenausgang wird storniert, nacherfasster Bestand bleibt liegen (D-1262).', 'taxmod-sales'), $sale->number)),
             default       => '',
         };
     }

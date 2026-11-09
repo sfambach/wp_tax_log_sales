@@ -109,8 +109,8 @@ final class SalesService
     }
 
     /**
-     * Takes a sale's booking back (V1, V2: a Storno at the stock, nothing deleted): the goods issue and the lots recorded for it
-     * are cancelled, the items forget their lot.
+     * Takes a sale's booking back (V1, V2: a Storno at the stock, nothing deleted): the goods issue
+     * is cancelled, the items forget their lot. A lot recorded for it stays (D-1262: the piece is still there).
      */
     public function cancel(int $saleId, string $who): void
     {

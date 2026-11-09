@@ -12,7 +12,8 @@ Sales for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modele
   The bookings go through Taxmod Stock (filters `taxmod_stock_lots_of`, `taxmod_stock_book_backfill`,
   `taxmod_stock_book_sale`, Taxmod Stock 0.64.27); the lot is written to the item.
 - Every step can be taken back (D-1010): «Zuordnung lösen» empties an item's material, «Buchung zurücknehmen» cancels the
-  goods issue and its recorded lots at the stock (`taxmod_stock_cancel_sale`, a Storno) and empties the items' lots.
+  goods issue at the stock (`taxmod_stock_cancel_sale` with the sale, a Storno) and empties the items' lots; a recorded lot
+  stays, as the proof where the piece came from (D-1262).
 
 Concept and decisions: [`docs/pakete/verkauf/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/verkauf/konzept.md),
 D-1260 in the modeller's decision log.
