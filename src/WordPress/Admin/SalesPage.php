@@ -134,7 +134,9 @@ final class SalesPage
                 esc_html($sale->buyer),
                 $items,
                 esc_html($names[$sale->state()]),
-            ], $this->bookButton($sale, $tab), $this->details($sale, $tab));
+            // His report 2026-11-17 «lädt ewigkeiten … und passiert nichts»: every item without a material drew the modeller's
+            // material choice with all materials, for every sale on the page. The details come when the row opens (D-1147).
+            ], $this->bookButton($sale, $tab), ListPage::lazyDetails(self::DETAILS, ['sale' => (string) $sale->id, 'tab' => $tab]));
         }
 
         if ($rows === '') {
@@ -148,6 +150,33 @@ final class SalesPage
             [__('Artikel', 'taxmod-sales')],
             [__('Stand', 'taxmod-sales'), '8em'],
         ], $rows);
+    }
+
+    /** The source of the opened row's details (`taxmod_list_details`, D-1147). */
+    public const DETAILS = 'taxmod_sales_sale';
+
+    /**
+     * admin-ajax, through the modeller's `ListPage::details()` (nonce checked there): capability → validate → one sale's items.
+     *
+     * @param array<string, string> $args
+     */
+    public function listDetails(?string $html, string $source, array $args): ?string
+    {
+        if ($source !== self::DETAILS) {
+            return $html;
+        }
+
+        if (! current_user_can('manage_options')) {
+            return esc_html__('Nicht erlaubt.', 'taxmod-sales');
+        }
+
+        $tab = sanitize_key($args['tab'] ?? '');
+
+        try {
+            return $this->details($this->service->sale(absint($args['sale'] ?? 0)), $tab === '' ? self::ALL : $tab);
+        } catch (SalesError $error) {
+            return '<p>' . esc_html($error->getMessage()) . '</p>';
+        }
     }
 
     /** The items of a sale, each without a material with its dialog «Material zuordnen». */

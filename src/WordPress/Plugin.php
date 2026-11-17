@@ -62,6 +62,11 @@ final class Plugin
             return $pages;
         });
 
+        // D-1147: a sale's items (with the material choice) are drawn when its row opens, not with the list.
+        add_filter('taxmod_list_details', static fn (?string $html, string $source, array $args): ?string => $source === SalesPage::DETAILS
+            ? (new SalesPage())->listDetails($html, $source, $args)
+            : $html, 10, 3);
+
         // ⚠️ *Only where admin-post.php answers (D-1187, D-1244); the page itself is named only inside the handler (D-1254).*
         if (self::handlesAdminActions()) {
             foreach (SalesPage::ACTIONS as $action) {
