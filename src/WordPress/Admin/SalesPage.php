@@ -293,7 +293,7 @@ final class SalesPage
 
     private static function quantity(float $count): string
     {
-        return number_format_i18n($count, floor($count) === $count ? 0 : 2);
+        return ListPage::number($count, 2);
     }
 
     /** @param array<string, string|int> $args */
