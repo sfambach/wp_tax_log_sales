@@ -2,8 +2,6 @@
 
 namespace TaxmodSales\Core;
 
-use Taxmod\Core\Role\RoleMap;
-
 /**
  * The sales read from the model's raw records — the one place that turns field ids into {@see Sale} and {@see SoldItem}.
  */
@@ -19,15 +17,16 @@ final class Sales
     ];
 
     /**
+     * @param \Closure(string): int               $field   role name → field id, from the modeller's role table (D-1394)
      * @param array<int, array<int, list<string>>> $sales record id → relation id → values, the node «Verkäufe»
      * @param array<int, array<int, list<string>>> $items record id → relation id → values, their positions
      * @return list<Sale> newest first
      */
-    public static function of(RoleMap $roles, array $sales, array $items): array
+    public static function of(\Closure $field, array $sales, array $items): array
     {
-        $first = static fn (array $values, string $field): string => (string) ($values[$roles->field($field)][0] ?? '');
-        $id    = static function (array $values, string $field) use ($roles): ?int {
-            $value = (int) ($values[$roles->field($field)][0] ?? 0);
+        $first = static fn (array $values, string $role): string => (string) ($values[$field($role)][0] ?? '');
+        $id    = static function (array $values, string $role) use ($field): ?int {
+            $value = (int) ($values[$field($role)][0] ?? 0);
 
             return $value > 0 ? $value : null;
         };
@@ -36,7 +35,7 @@ final class Sales
         foreach ($sales as $saleId => $values) {
             $positions = [];
 
-            foreach ($values[$roles->field('sale_items')] ?? [] as $itemId) {
+            foreach ($values[$field('sale_items')] ?? [] as $itemId) {
                 $item = $items[(int) $itemId] ?? null;
 
                 if ($item === null) {

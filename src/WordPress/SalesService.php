@@ -73,7 +73,7 @@ final class SalesService
     {
         $s = $this->roles();
 
-        return $this->sales ??= Sales::of($s, $this->model->records($s->node('sale')), $this->model->records($s->node('sold_item')));
+        return $this->sales ??= Sales::of($s->field(...), $this->model->records($s->node('sale')), $this->model->records($s->node('sold_item')));
     }
 
     public function sale(int $id): Sale
