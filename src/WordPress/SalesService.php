@@ -2,11 +2,13 @@
 
 namespace TaxmodSales\WordPress;
 
+use Taxmod\Core\Role\RoleMap;
+use Taxmod\WordPress\ModelDoor;
+
 use TaxmodSales\Core\BookingPlan;
 use TaxmodSales\Core\Sale;
 use TaxmodSales\Core\Sales;
 use TaxmodSales\Core\SalesError;
-use TaxmodSales\Core\Structure;
 
 /**
  * What the sales page asks and does: the sales as the model holds them, a material for an item, and a sale's booking — always
@@ -14,6 +16,7 @@ use TaxmodSales\Core\Structure;
  */
 final class SalesService
 {
+    /** The module's own id table before the role table (D-1394); handed to the modeller once, then gone. */
     public const STRUCTURE = 'taxmod_sales_structure';
 
     /** The stock module's bookings (wp_tax_stock): the lots of materials, a recorded lot, a goods issue for a sale. */
@@ -22,8 +25,6 @@ final class SalesService
     public const BOOK_SALE = 'taxmod_stock_book_sale';
     public const CANCEL_SALE = 'taxmod_stock_cancel_sale';
 
-    private ?Structure $structure = null;
-
     /** @var list<Sale>|null */
     private ?array $sales = null;
 
@@ -31,23 +32,46 @@ final class SalesService
     {
     }
 
-    public function structure(): Structure
+    /** Where the sales live in the model: the modeller's one role table (D-1394). */
+    public function roles(): RoleMap
     {
-        if ($this->structure !== null) {
-            return $this->structure;
+        return ModelDoor::roles();
+    }
+
+    /** @return list<string> the required roles of this module not set on this site, e.g. «fields.item_material» */
+    public function missingRoles(): array
+    {
+        return array_values(array_map(static fn (array $role): string => $role['group'] . '.' . $role['key'],
+            array_filter(ModelDoor::missingRoles(), static fn (array $role): bool => $role['module'] === Plugin::ROLE_MODULE)));
+    }
+
+    /**
+     * D-1394: the module's own id table goes into the role table once; nothing set there is overwritten. With no conflict the
+     * own table is deleted, with one it stays and the conflict goes to the log.
+     */
+    public static function handOverStructure(): void
+    {
+        $stored = get_option(self::STRUCTURE);
+
+        if (! is_array($stored)) {
+            return;
         }
 
-        $stored  = get_option(self::STRUCTURE, []);
-        $file    = dirname(__DIR__, 2) . '/structure-live.json';
-        $bundled = is_readable($file) ? json_decode((string) file_get_contents($file), true) : [];
+        $conflicts = ModelDoor::adoptRoles($stored);
 
-        return $this->structure = Structure::fromArray(Structure::completed(is_array($stored) ? $stored : [], is_array($bundled) ? $bundled : []));
+        if ($conflicts !== []) {
+            error_log('Taxmod Sales: roles set differently in the modeller: ' . wp_json_encode($conflicts));
+
+            return;
+        }
+
+        delete_option(self::STRUCTURE);
     }
 
     /** @return list<Sale> newest first; one read of each node per request */
     public function sales(): array
     {
-        $s = $this->structure();
+        $s = $this->roles();
 
         return $this->sales ??= Sales::of($s, $this->model->records($s->node('sale')), $this->model->records($s->node('sold_item')));
     }
@@ -66,7 +90,7 @@ final class SalesService
     /** The modeller's control for an item's material (D-1250), posted as `material[<relation>]`. */
     public function materialControl(int $item, string $formId): string
     {
-        $s = $this->structure();
+        $s = $this->roles();
 
         return $this->model->controls($s->node('sold_item'), [$s->field('item_material')], 'material', $formId, $item)[$s->field('item_material')] ?? '';
     }
@@ -80,7 +104,7 @@ final class SalesService
      */
     public function assign(int $item, array $submitted, bool $sameArticle): int
     {
-        $s        = $this->structure();
+        $s        = $this->roles();
         $relation = $s->field('item_material');
         $material = $this->model->typed($s->node('sold_item'), $submitted)[$relation] ?? '';
         $items    = [$item];
@@ -104,7 +128,7 @@ final class SalesService
     /** Takes an item's material back (V1); a booked item keeps it until its booking is taken back. */
     public function unassign(int $item): void
     {
-        $this->model->write([['op' => 'set_values', 'record' => (string) $item, 'values' => [(string) $this->structure()->field('item_material') => '']]]);
+        $this->model->write([['op' => 'set_values', 'record' => (string) $item, 'values' => [(string) $this->roles()->field('item_material') => '']]]);
         $this->sales = null;
     }
 
@@ -120,7 +144,7 @@ final class SalesService
 
         $sale = $this->sale($saleId);
         $this->stock(self::CANCEL_SALE, ['sale' => $sale->id, 'who' => $who]);
-        $relation = $this->structure()->field('item_lot');
+        $relation = $this->roles()->field('item_lot');
         $this->model->write(array_values(array_map(static fn ($item): array => ['op' => 'set_values', 'record' => (string) $item->id, 'values' => [(string) $relation => '']],
             array_filter($sale->items, static fn ($item): bool => $item->isBooked()))));
         $this->sales = null;
@@ -161,7 +185,7 @@ final class SalesService
             'date'  => $sale->day(),
             'title' => sprintf(__('Verkauf %s', 'taxmod-sales'), $sale->number),
         ]);
-        $relation = $this->structure()->field('item_lot');
+        $relation = $this->roles()->field('item_lot');
         $this->model->write(array_map(static fn (array $line): array => ['op' => 'set_values', 'record' => (string) $line['item'], 'values' => [(string) $relation => (string) $line['lot']]], $plan));
         $this->sales = null;
 

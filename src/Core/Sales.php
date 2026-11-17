@@ -2,21 +2,32 @@
 
 namespace TaxmodSales\Core;
 
+use Taxmod\Core\Role\RoleMap;
+
 /**
  * The sales read from the model's raw records — the one place that turns field ids into {@see Sale} and {@see SoldItem}.
  */
 final class Sales
 {
     /**
+     * The roles the sales read (D-1394), all required: D-934 a sale and its sold items, D-1257 the material a sold item
+     * points to, D-1260 what a sold item is and the lot it left.
+     */
+    public const ROLES = [
+        'nodes'  => ['sale', 'sold_item', 'material'],
+        'fields' => ['label', 'sale_number', 'sale_platform', 'sale_buyer', 'sale_date', 'sale_items', 'item_count', 'item_material', 'item_lot'],
+    ];
+
+    /**
      * @param array<int, array<int, list<string>>> $sales record id → relation id → values, the node «Verkäufe»
      * @param array<int, array<int, list<string>>> $items record id → relation id → values, their positions
      * @return list<Sale> newest first
      */
-    public static function of(Structure $structure, array $sales, array $items): array
+    public static function of(RoleMap $roles, array $sales, array $items): array
     {
-        $first = static fn (array $values, string $field): string => (string) ($values[$structure->field($field)][0] ?? '');
-        $id    = static function (array $values, string $field) use ($structure): ?int {
-            $value = (int) ($values[$structure->field($field)][0] ?? 0);
+        $first = static fn (array $values, string $field): string => (string) ($values[$roles->field($field)][0] ?? '');
+        $id    = static function (array $values, string $field) use ($roles): ?int {
+            $value = (int) ($values[$roles->field($field)][0] ?? 0);
 
             return $value > 0 ? $value : null;
         };
@@ -25,7 +36,7 @@ final class Sales
         foreach ($sales as $saleId => $values) {
             $positions = [];
 
-            foreach ($values[$structure->field('sale_items')] ?? [] as $itemId) {
+            foreach ($values[$roles->field('sale_items')] ?? [] as $itemId) {
                 $item = $items[(int) $itemId] ?? null;
 
                 if ($item === null) {

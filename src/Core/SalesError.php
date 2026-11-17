@@ -12,11 +12,6 @@ final class SalesError extends \RuntimeException
         parent::__construct($message);
     }
 
-    public static function notConfigured(string $key): self
-    {
-        return new self('not_configured', $key, 'The sales structure lacks ' . $key . '.');
-    }
-
     public static function fromModel(string $message): self
     {
         return new self('model', $message, $message);

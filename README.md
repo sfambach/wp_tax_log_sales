@@ -20,15 +20,15 @@ D-1260 in the modeller's decision log.
 
 ## Requirements
 
-- Taxonomy Modeller 0.2.39 or newer (`ModelDoor`, the shared list page with its acts).
+- Taxonomy Modeller 0.2.118 or newer (`ModelDoor`, the shared list page, the one role table D-1394).
 - Taxmod Stock for the navigation; for booking, the stock's sale bookings.
 - Two fields on «Verkaufte Artikel»: «Material» (record reference to the material node, 0..1) and «Bestandsposten»
-  (aggregation to the lots, 0..1). Their ids go into the option `taxmod_sales_structure` (REST `/wp/v2/settings`) or into
-  `structure-live.json`; until they are there, the page lists the missing keys.
+  (aggregation to the lots, 0..1). Their ids are roles in the modeller's role table (D-1394); until every role is set, the
+  page lists the missing ones.
 
 ## Layout
 
-- `src/Core`: domain, no WordPress (CD-1): structure ids, sales and items, the booking plan.
+- `src/Core`: domain, no WordPress (CD-1): the roles it reads, sales and items, the booking plan.
 - `src/WordPress`: the boundary: the model gateway, the service and the admin page.
 - `tests/Core`: PHPUnit, no WordPress.
 

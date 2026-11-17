@@ -39,7 +39,7 @@ final class SalesPage
         $screen = __('Verkäufe', 'taxmod-sales');
         $hint   = __('Ein Verkauf ist gebucht, wenn jeder Artikel ein Material hat und aus einem Bestandsposten abgegangen ist. Fehlt der Bestand, wird er zum Verkaufsdatum nacherfasst (D-1260).', 'taxmod-sales');
         $page   = static fn (array $sections, array $tiles = [], string $tabs = ''): string => ListPage::page($screen, $tiles, $sections, Plugin::VERSION, 'Taxmod Sales', $hint, $tabs);
-        $missing = $this->service->structure()->missing();
+        $missing = $this->service->missingRoles();
 
         if ($missing !== []) {
             return $page([['html' => '<div class="notice notice-warning inline"><p>' . esc_html__('Das Modell des Verkaufs ist noch nicht eingespielt. Es fehlen:', 'taxmod-sales')

@@ -3,11 +3,11 @@
 namespace TaxmodSales\Tests\Core;
 
 use PHPUnit\Framework\TestCase;
+use Taxmod\Core\Role\RoleMap;
 use TaxmodSales\Core\BookingPlan;
 use TaxmodSales\Core\Sale;
 use TaxmodSales\Core\Sales;
 use TaxmodSales\Core\SalesError;
-use TaxmodSales\Core\Structure;
 
 final class SalesTest extends TestCase
 {
@@ -18,7 +18,7 @@ final class SalesTest extends TestCase
     /** @return list<Sale> */
     private static function sales(): array
     {
-        return Sales::of(Structure::fromArray(self::S), [
+        return Sales::of(RoleMap::fromArray(self::S), [
             100 => [11 => ['02-1'], 12 => ['Ebay'], 13 => ['ph'], 14 => ['2025-09-24 00:00:00'], 15 => ['200']],
             101 => [11 => ['02-2'], 12 => ['eBay'], 13 => ['gu'], 14 => ['2026-10-22 00:00:00'], 15 => ['201', '202']],
         ], [
@@ -62,9 +62,9 @@ final class SalesTest extends TestCase
         BookingPlan::of(self::sales()[1], []);
     }
 
-    public function testTheStructureNamesWhatIsMissing(): void
+    public function testEveryRoleTheSalesReadIsDeclared(): void
     {
-        self::assertSame(['fields.item_material', 'fields.item_lot'], Structure::fromArray(['nodes' => self::S['nodes'],
-            'fields' => array_diff_key(self::S['fields'], ['item_material' => 0, 'item_lot' => 0])])->missing());
+        self::assertSame(array_keys(self::S['nodes']), Sales::ROLES['nodes']);
+        self::assertSame(array_keys(self::S['fields']), Sales::ROLES['fields']);
     }
 }

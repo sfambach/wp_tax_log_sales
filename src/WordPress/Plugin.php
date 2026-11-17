@@ -2,22 +2,25 @@
 
 namespace TaxmodSales\WordPress;
 
-use TaxmodSales\Core\Structure;
+use TaxmodSales\Core\Sales;
 use TaxmodSales\WordPress\Admin\SalesPage;
 
 /**
  * Wires the module into WordPress: its page inside the logistics navigation (area «Warenausgang», D-1260), the form
- * handlers and the structure option.
+ * handlers and the roles it reads (D-1394).
  */
 final class Plugin
 {
-    public const VERSION = '0.0.2';
+    public const VERSION = '0.0.3';
 
     /** The page's address, owned here so the boot names it without compiling the page (D-1187). */
     public const PAGE = 'taxmod-verkauf';
 
-    /** D-1254: the acts of the shared list page came with the modeller 0.2.39. */
-    private const MODELLER = '0.2.39';
+    /** D-1394: the one role table came with the modeller 0.2.118. */
+    private const MODELLER = '0.2.118';
+
+    /** The module's name in the role table's declarations. */
+    public const ROLE_MODULE = 'sales';
 
     public function boot(): void
     {
@@ -35,9 +38,17 @@ final class Plugin
             return;
         }
 
-        // On admin_init and rest_api_init, where settings are saved, not on every page view (D-1187).
-        add_action('admin_init', [$this, 'registerSettings']);
-        add_action('rest_api_init', [$this, 'registerSettings']);
+        add_action('admin_init', [SalesService::class, 'handOverStructure']);
+        // D-1394: the roles this module reads, so the modeller can say which are not set on this site.
+        add_filter('taxmod_roles', static function (array $roles): array {
+            foreach (Sales::ROLES as $group => $keys) {
+                foreach ($keys as $key) {
+                    $roles[] = ['module' => self::ROLE_MODULE, 'group' => $group, 'key' => $key, 'required' => true];
+                }
+            }
+
+            return $roles;
+        });
         // D-1085: a module's page opens inside the logistics frame; the stock module draws the navigation.
         add_filter('taxmod_logistics_pages', static function (mixed $pages): array {
             $pages   = is_array($pages) ? $pages : [];
@@ -65,18 +76,5 @@ final class Plugin
     private static function handlesAdminActions(): bool
     {
         return ! method_exists(\Taxmod\WordPress\Plugin::class, 'handlesAdminActions') || \Taxmod\WordPress\Plugin::handlesAdminActions();
-    }
-
-    /** The structure ids, settable over REST (/wp/v2/settings) right after the model change is applied. */
-    public function registerSettings(): void
-    {
-        $group = static fn (): array => ['type' => 'object', 'additionalProperties' => ['type' => 'integer']];
-
-        register_setting('taxmod_sales', SalesService::STRUCTURE, [
-            'type'              => 'object',
-            'default'           => [],
-            'sanitize_callback' => static fn ($value): array => Structure::fromArray(is_array($value) ? $value : [])->toArray(),
-            'show_in_rest'      => ['schema' => ['type' => 'object', 'properties' => ['nodes' => $group(), 'fields' => $group()]]],
-        ]);
     }
 }
