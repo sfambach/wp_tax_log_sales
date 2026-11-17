@@ -17,7 +17,7 @@ final class Plugin
     public const PAGE = 'taxmod-verkauf';
 
     /** D-1394: the one role table came with the modeller 0.2.118. */
-    private const MODELLER = '0.2.118';
+    private const MODELLER = '0.2.130';
 
     /** The module's name in the role table's declarations. */
     public const ROLE_MODULE = 'sales';
