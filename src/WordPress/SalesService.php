@@ -142,11 +142,15 @@ final class SalesService
             throw SalesError::noStockModule();
         }
 
-        $sale = $this->sale($saleId);
-        $this->stock(self::CANCEL_SALE, ['sale' => $sale->id, 'who' => $who]);
+        $sale     = $this->sale($saleId);
         $relation = $this->roles()->field('item_lot');
-        $this->model->write(array_values(array_map(static fn ($item): array => ['op' => 'set_values', 'record' => (string) $item->id, 'values' => [(string) $relation => '']],
-            array_filter($sale->items, static fn ($item): bool => $item->isBooked()))));
+
+        // S1: the Storno and the items' lots as one act — a failed write leaves no Storno behind.
+        ModelDoor::inAct(function () use ($sale, $who, $relation): void {
+            $this->stock(self::CANCEL_SALE, ['sale' => $sale->id, 'who' => $who]);
+            $this->model->write(array_values(array_map(static fn ($item): array => ['op' => 'set_values', 'record' => (string) $item->id, 'values' => [(string) $relation => '']],
+                array_filter($sale->items, static fn ($item): bool => $item->isBooked()))));
+        });
         $this->sales = null;
     }
 
@@ -159,6 +163,9 @@ final class SalesService
     /**
      * Books one sale (D-1260): each item leaves the oldest lot of its material that holds it, or a lot recorded for it on the
      * day of the sale; the lot is written to the item. Answers the goods issue's id.
+     *
+     * Recording, goods issue and the items' lots are one act (S1, D-1419): if the model write fails, the issue is rolled back with
+     * it, so a second try cannot book the sale twice.
      */
     public function book(int $saleId): int
     {
@@ -169,27 +176,31 @@ final class SalesService
         $sale      = $this->sale($saleId);
         $materials = array_values(array_unique(array_filter(array_map(static fn ($item): ?int => $item->material, $sale->items))));
         $plan      = BookingPlan::of($sale, self::lotList($this->stock(self::LOTS_OF, ['materials' => $materials])));
+        $relation  = $this->roles()->field('item_lot');
 
-        foreach ($plan as $i => $line) {
-            if ($line['lot'] === null) {
-                $plan[$i]['lot'] = (int) $this->stock(self::BOOK_BACKFILL, [
-                    'material' => $line['material'], 'quantity' => $line['count'], 'date' => $sale->day(), 'reference' => $sale->id,
-                    'title'    => sprintf(__('Nacherfassung für Verkauf %s', 'taxmod-sales'), $sale->number),
-                ]);
+        $answer = ModelDoor::inAct(function () use ($sale, $plan, $relation): int {
+            foreach ($plan as $i => $line) {
+                if ($line['lot'] === null) {
+                    $plan[$i]['lot'] = (int) $this->stock(self::BOOK_BACKFILL, [
+                        'material' => $line['material'], 'quantity' => $line['count'], 'date' => $sale->day(), 'reference' => $sale->id,
+                        'title'    => sprintf(__('Nacherfassung für Verkauf %s', 'taxmod-sales'), $sale->number),
+                    ]);
+                }
             }
-        }
 
-        $issue = (int) $this->stock(self::BOOK_SALE, [
-            'sale'  => $sale->id,
-            'lines' => self::issueLines($plan),
-            'date'  => $sale->day(),
-            'title' => sprintf(__('Verkauf %s', 'taxmod-sales'), $sale->number),
-        ]);
-        $relation = $this->roles()->field('item_lot');
-        $this->model->write(array_map(static fn (array $line): array => ['op' => 'set_values', 'record' => (string) $line['item'], 'values' => [(string) $relation => (string) $line['lot']]], $plan));
+            $issue = (int) $this->stock(self::BOOK_SALE, [
+                'sale'  => $sale->id,
+                'lines' => self::issueLines($plan),
+                'date'  => $sale->day(),
+                'title' => sprintf(__('Verkauf %s', 'taxmod-sales'), $sale->number),
+            ]);
+            $this->model->write(array_map(static fn (array $line): array => ['op' => 'set_values', 'record' => (string) $line['item'], 'values' => [(string) $relation => (string) $line['lot']]], $plan));
+
+            return $issue;
+        });
         $this->sales = null;
 
-        return $issue;
+        return $answer['result'];
     }
 
     /**

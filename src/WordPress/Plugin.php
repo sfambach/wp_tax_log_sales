@@ -11,7 +11,7 @@ use TaxmodSales\WordPress\Admin\SalesPage;
  */
 final class Plugin
 {
-    public const VERSION = '0.0.3';
+    public const VERSION = '0.0.6';
 
     /** The page's address, owned here so the boot names it without compiling the page (D-1187). */
     public const PAGE = 'taxmod-verkauf';
