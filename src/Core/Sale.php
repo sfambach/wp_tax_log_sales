@@ -14,7 +14,11 @@ final class Sale
     /** In the order of the process. */
     public const STATES = [self::TO_ASSIGN, self::TO_BOOK, self::BOOKED];
 
-    /** @param list<SoldItem> $items */
+    /**
+     * @param list<SoldItem> $items
+     * @param string $stage       one of {@see Stage::ALL} (D-1528)
+     * @param bool   $stageStored false: the sale's field is empty and the stage was read from the eBay page or is «Verkauft»
+     */
     public function __construct(
         public readonly int $id,
         public readonly string $number,
@@ -22,6 +26,8 @@ final class Sale
         public readonly string $buyer,
         public readonly string $soldOn,
         public readonly array $items,
+        public readonly string $stage = Stage::SOLD,
+        public readonly bool $stageStored = false,
     ) {
     }
 

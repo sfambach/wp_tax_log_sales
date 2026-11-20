@@ -16,13 +16,25 @@ final class Sales
         'fields' => ['label', 'sale_number', 'sale_platform', 'sale_buyer', 'sale_date', 'sale_items', 'item_count', 'item_material', 'item_lot'],
     ];
 
+    /** D-1528: the stage of a sale and its constants — optional until the model change is in; without them every sale is «Verkauft». */
+    public const STAGE_ROLES = [
+        'fields' => ['sale_stage'],
+        'values' => Stage::ALL,
+    ];
+
+    /** The platform the eBay module writes on its sales; only those read its old stages. */
+    public const EBAY = 'ebay';
+
     /**
      * @param \Closure(string): int               $field   role name → field id, from the modeller's role table (D-1394)
      * @param array<int, array<int, list<string>>> $sales record id → relation id → values, the node «Verkäufe»
      * @param array<int, array<int, list<string>>> $items record id → relation id → values, their positions
+     * @param int|null                              $stageField the relation of «Stufe», null while the model lacks it
+     * @param array<int, string>                    $stageValues constant id → stage key ({@see Stage::ALL})
+     * @param array<string, string>                 $ebayStages eBay order id → the eBay page's stage, read until carried over
      * @return list<Sale> newest first
      */
-    public static function of(\Closure $field, array $sales, array $items): array
+    public static function of(\Closure $field, array $sales, array $items, ?int $stageField = null, array $stageValues = [], array $ebayStages = []): array
     {
         $first = static fn (array $values, string $role): string => (string) ($values[$field($role)][0] ?? '');
         $id    = static function (array $values, string $role) use ($field): ?int {
@@ -47,8 +59,13 @@ final class Sales
                     $id($item, 'item_material'), $id($item, 'item_lot'));
             }
 
-            $out[] = new Sale((int) $saleId, $first($values, 'sale_number'), $first($values, 'sale_platform'), $first($values, 'sale_buyer'),
-                $first($values, 'sale_date'), $positions);
+            $number   = $first($values, 'sale_number');
+            $platform = $first($values, 'sale_platform');
+            $stored   = $stageField === null ? null : ($stageValues[(int) ($values[$stageField][0] ?? 0)] ?? null);
+            $legacy   = strtolower($platform) === self::EBAY && isset($ebayStages[$number]) ? Stage::fromEbay($ebayStages[$number]) : null;
+
+            $out[] = new Sale((int) $saleId, $number, $platform, $first($values, 'sale_buyer'),
+                $first($values, 'sale_date'), $positions, $stored ?? $legacy ?? Stage::SOLD, $stored !== null);
         }
 
         usort($out, static fn (Sale $a, Sale $b): int => [$b->soldOn, $b->id] <=> [$a->soldOn, $a->id]);
@@ -71,6 +88,26 @@ final class Sales
                 if ($other->id !== $item->id && $other->material === null && $other->article() === $item->article()) {
                     $out[] = $other->id;
                 }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The sales whose stage stands only on the eBay page — what the one-time carry-over writes into their field (D-1528, Prüftor
+     * condition 1: `taxmod_ebay_stages` is read only until then).
+     *
+     * @param list<Sale> $sales
+     * @return array<int, string> sale id → stage
+     */
+    public static function toCarryOver(array $sales): array
+    {
+        $out = [];
+
+        foreach ($sales as $sale) {
+            if (! $sale->stageStored && $sale->stage !== Stage::SOLD) {
+                $out[$sale->id] = $sale->stage;
             }
         }
 
