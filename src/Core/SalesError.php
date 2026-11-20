@@ -44,7 +44,7 @@ final class SalesError extends \RuntimeException
 
     public static function notEnoughStock(string $item, float $missing): self
     {
-        return new self('not_enough_stock', $item, 'Not enough free stock for «' . $item . '»: ' . rtrim(rtrim(number_format($missing, 3, '.', ''), '0'), '.') . ' missing.');
+        return new self('not_enough_stock', $item, 'Not enough free stock for «' . $item . '»: ' . $missing . ' missing.');
     }
 
     public static function noOutboundPlace(): self
