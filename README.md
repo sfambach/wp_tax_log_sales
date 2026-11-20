@@ -18,7 +18,7 @@ Sales for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modele
 - **Warenausgang (D-1528)**: one process for every channel, each stage a screen of its own in the navigation with its open
   sales: **Verkauft → Bereitstellen → Packen → Etikett → Übergeben → Unterwegs → Zugestellt**. The stage is the field «Stufe»
   of the sale; menu and process bar read the same count. Until the field is in the model the stages are only shown, read from
-  the eBay shipping page (`taxmod_ebay_stages`); once it is there, they are carried over once and that option is no longer read.
+  the eBay shipping page (`taxmod_ebay_stages`); once it is there, the button «Stufen aus eBay übernehmen» writes them into the field once (an act of its own, CD-5) and that option is no longer read.
   Stage 1 moves only the stage: no stock booking, no eBay message yet.
 
 Concept and decisions: [`docs/pakete/verkauf/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/verkauf/konzept.md),

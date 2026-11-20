@@ -21,9 +21,10 @@ final class StagePage
     public const ACTION = 'taxmod_sales_stage';
     public const BULK_NEXT = 'taxmod_sales_stage_next';
     public const BULK_BACK = 'taxmod_sales_stage_back';
+    public const CARRY_OVER = 'taxmod_sales_stage_carry';
 
     /** @var list<string> the admin-post actions this page answers */
-    public const ACTIONS = [self::ACTION, self::BULK_NEXT, self::BULK_BACK];
+    public const ACTIONS = [self::ACTION, self::BULK_NEXT, self::BULK_BACK, self::CARRY_OVER];
 
     private const NONCE = 'taxmod_sales_stage';
     private const FORM = 'taxmod-sales-stage-bulk';
@@ -50,8 +51,7 @@ final class StagePage
         }
 
         try {
-            $carried = $this->service->carryOver();
-            $sales   = $this->service->sales();
+            $sales = $this->service->sales();
         } catch (SalesError $error) {
             return $page('<div class="notice notice-error inline"><p>' . esc_html($error->getMessage()) . '</p></div>');
         }
@@ -61,7 +61,7 @@ final class StagePage
         $shown  = array_values(array_filter($sales, fn (Sale $sale): bool => $sale->stage === $this->stage));
 
         return $page(ListPage::listHead($names[$this->stage], count($shown), self::hint($this->stage))
-            . $this->notices($carried) . $this->list($shown), $bar);
+            . $this->notices() . $this->list($shown), $bar);
     }
 
     /**
@@ -91,6 +91,16 @@ final class StagePage
             }
 
             ListPage::nonce(self::NONCE);
+
+            if ($action === self::CARRY_OVER) {
+                try {
+                    $carried = $this->service->carryOver();
+                } catch (SalesError $error) {
+                    ListPage::fail($error->getMessage());
+                }
+
+                return add_query_arg(['msg' => 'carried', 'n' => $carried], self::url($stage ?? Stage::SOLD));
+            }
 
             if ($stage === null) {
                 ListPage::fail(__('Unbekannte Stufe.', 'taxmod-sales'));
@@ -169,20 +179,27 @@ final class StagePage
             . '</form>';
     }
 
-    private function notices(int $carried): string
+    private function notices(): string
     {
         $html = '';
+        $n    = absint($_GET['n'] ?? 0);
 
         if (! $this->service->canStage()) {
             $html .= '<div class="notice notice-warning inline"><p>' . esc_html__('Das Feld «Stufe» ist noch nicht im Modell: die Stufen werden nur gezeigt (aus der eBay-Versandseite), nicht gesetzt.', 'taxmod-sales') . '</p></div>';
+        } elseif (! $this->service->carriedOver()) {
+            // Prüftor 20.11.: the carry-over writes, so it is an act of its own (CD-5), never a side effect of drawing the page.
+            $html .= '<div class="notice notice-info inline"><form method="post" class="taxmod-acts" action="' . esc_url(admin_url('admin-post.php')) . '">'
+                . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::CARRY_OVER) . '">'
+                . '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '"><p>'
+                . esc_html__('Die Stufen der eBay-Versandseite stehen noch nicht am Verkauf; sie werden bis dahin von dort gelesen.', 'taxmod-sales') . '</p> '
+                . get_submit_button(__('Stufen aus eBay übernehmen', 'taxmod-sales'), 'secondary small', 'submit', false) . '</form></div>';
         }
 
-        if ($carried > 0) {
+        if (sanitize_key((string) ($_GET['msg'] ?? '')) === 'carried') {
             /* translators: %d: number of sales */
-            $html .= '<div class="notice notice-info inline"><p>' . esc_html(sprintf(_n('Die Stufe von %d Verkauf wurde aus der eBay-Versandseite übernommen.', 'Die Stufe von %d Verkäufen wurde aus der eBay-Versandseite übernommen.', $carried, 'taxmod-sales'), $carried)) . '</p></div>';
+            $html .= '<div class="notice notice-success inline"><p>' . esc_html(sprintf(_n('Die Stufe von %d Verkauf wurde aus der eBay-Versandseite übernommen.', 'Die Stufe von %d Verkäufen wurde aus der eBay-Versandseite übernommen.', $n, 'taxmod-sales'), $n)) . '</p></div>';
         }
 
-        $n  = absint($_GET['n'] ?? 0);
         $to = self::stageOf((string) ($_GET['to'] ?? ''));
 
         if (sanitize_key((string) ($_GET['msg'] ?? '')) === 'moved' && $to !== null) {

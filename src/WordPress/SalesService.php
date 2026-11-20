@@ -165,13 +165,17 @@ final class SalesService
 
     /**
      * Writes the eBay page's stages into the sales once (Prüftor condition 1): the sales whose field is empty take the stage the
-     * eBay page shows; afterwards the option is no longer read. Runs when the stage field is there and has not run yet.
+     * eBay page shows; afterwards the option is no longer read. An act of its own («Stufen aus eBay übernehmen», CD-5), run once.
      *
      * @return int how many sales were written
      */
     public function carryOver(): int
     {
-        if (! $this->canStage() || get_option(self::CARRIED_OVER, false)) {
+        if (! $this->canStage()) {
+            throw SalesError::noStageField();
+        }
+
+        if ($this->carriedOver()) {
             return 0;
         }
 
@@ -186,6 +190,11 @@ final class SalesService
         update_option(self::CARRIED_OVER, gmdate('c'), false);
 
         return count($carry);
+    }
+
+    public function carriedOver(): bool
+    {
+        return (bool) get_option(self::CARRIED_OVER, false);
     }
 
     /** @return array<string, int>|null the last counted stages, or null if nothing was counted yet */
