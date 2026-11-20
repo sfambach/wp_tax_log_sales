@@ -3,6 +3,7 @@
 namespace TaxmodSales\WordPress\Admin;
 
 use Taxmod\WordPress\Admin\ListPage;
+use Taxmod\WordPress\Admin\RecordPick;
 use TaxmodSales\Core\Sale;
 use TaxmodSales\Core\SalesError;
 use TaxmodSales\Core\SoldItem;
@@ -127,7 +128,7 @@ final class StagePage
             try {
                 // D-1528 Etappe 2: on from «Bereitstellen» picks into the outbound place, back from «Packen» takes it back.
                 $moved = match (true) {
-                    $stage === Stage::PROVIDE && $forward && $this->service->canProvide() => $this->service->provide($ids, absint($_POST['box'] ?? 0)),
+                    $stage === Stage::PROVIDE && $forward && $this->service->canProvide() => $this->service->provide($ids, $this->box()),
                     $stage === Stage::PACK && ! $forward && $this->service->canProvide()  => $this->service->unprovide($ids),
                     default                                                               => $this->service->moveStage($ids, $stage, $to),
                 };
@@ -137,6 +138,18 @@ final class StagePage
 
             return add_query_arg(['msg' => 'moved', 'n' => $moved, 'to' => $to], self::url($stage));
         }, $back);
+    }
+
+    /** The outbound place a step names, or the only one there is; several and none chosen is refused. */
+    private function box(): int
+    {
+        $box = absint($_POST['box'] ?? 0);
+
+        if ($box === 0 && count((new self(Stage::PROVIDE, $this->service))->outbound()) > 1) {
+            ListPage::fail(__('Mehrere Warenausgangsplätze: mit dem Pfeil in der Zeile bereitstellen, der Platz steht über der Liste.', 'taxmod-sales'));
+        }
+
+        return $box;
     }
 
     /** @param list<Sale> $shown */
@@ -251,15 +264,14 @@ final class StagePage
     }
 
     /**
-     * The outbound place «Bereitstellen» puts the goods on: the only one, or the one chosen above the list (shared by the row
-     * buttons' and the bulk form through `taxmodSalesBox`).
+     * The outbound place «Bereitstellen» puts the goods on when there is only one; with several, the row buttons take the one
+     * chosen above the list (RecordPick, D-1488) and the bulk step refuses.
      */
     private function boxField(string $form): string
     {
         $places = $this->outbound();
 
-        return count($places) === 1 ? '<input type="hidden" name="box" value="' . esc_attr((string) array_key_first($places)) . '" form="' . esc_attr($form) . '">'
-            : (count($places) > 1 ? '<input type="hidden" name="box" class="taxmod-sales-box" value="' . esc_attr((string) array_key_first($places)) . '" form="' . esc_attr($form) . '">' : '');
+        return count($places) === 1 ? '<input type="hidden" name="box" value="' . esc_attr((string) array_key_first($places)) . '" form="' . esc_attr($form) . '">' : '';
     }
 
     /** @return array<int, string> outbound place → label; empty outside «Bereitstellen» */
@@ -289,13 +301,8 @@ final class StagePage
                 /* translators: %s: the outbound place */
                 $html .= '<p class="description">' . esc_html(sprintf(__('Weiter bucht die Ware auf den Warenausgangsplatz %s.', 'taxmod-sales'), reset($places))) . '</p>';
             } else {
-                $options = '';
-
-                foreach ($places as $id => $label) {
-                    $options .= '<option value="' . esc_attr((string) $id) . '">' . esc_html($label) . '</option>';
-                }
-
-                $html .= '<p><label>' . esc_html__('Warenausgangsplatz', 'taxmod-sales') . ' <select onchange="document.querySelectorAll(\'.taxmod-sales-box\').forEach(function(f){f.value=this.value;},this)">' . $options . '</select></label></p>';
+                $html .= '<p>' . esc_html__('Warenausgangsplatz', 'taxmod-sales') . ' '
+                    . RecordPick::field('box', [['depth' => 0, 'name' => __('Warenausgangsplätze', 'taxmod-sales'), 'records' => $places]], (int) array_key_first($places), self::STEP_FORM, false) . '</p>';
             }
         }
         $n    = absint($_GET['n'] ?? 0);
