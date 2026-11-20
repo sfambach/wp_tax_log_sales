@@ -19,7 +19,9 @@ Sales for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modele
   sales: **Verkauft → Bereitstellen → Packen → Etikett → Übergeben → Unterwegs → Zugestellt**. The stage is the field «Stufe»
   of the sale; menu and process bar read the same count. Until the field is in the model the stages are only shown, read from
   the eBay shipping page (`taxmod_ebay_stages`); once it is there, the button «Stufen aus eBay übernehmen» writes them into the field once (an act of its own, CD-5) and that option is no longer read.
-  Stage 1 moves only the stage: no stock booking, no eBay message yet.
+  On from **Bereitstellen** picks every item not yet booked into the place with the function «Warenausgang» (`taxmod_stock_book_pick`, the
+  sale as Bezug, the fullest place first) and moves the sale to «Packen» in one act; back from «Packen» takes the pick back
+  (`taxmod_stock_cancel_pick`). An item booked before (D-1260) has left the stock and is not picked. No eBay message yet.
 
 Concept and decisions: [`docs/pakete/verkauf/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/verkauf/konzept.md),
 D-1260 in the modeller's decision log.
@@ -27,7 +29,8 @@ D-1260 in the modeller's decision log.
 ## Requirements
 
 - Taxonomy Modeller 0.2.180 or newer (`ModelDoor`, the shared list page, the one role table D-1394, `ListPage::listHead` D-1526).
-- Taxmod Stock for the navigation; for booking, the stock's sale bookings.
+- Taxmod Stock for the navigation; for booking, the stock's sale bookings; for «Bereitstellen» Taxmod Stock 0.64.173 (field
+  «Platzfunktion» on the Platzart, `taxmod_stock_places_with_function`, `taxmod_stock_cancel_pick`).
 - Two fields on «Verkaufte Artikel»: «Material» (record reference to the material node, 0..1) and «Bestandsposten»
   (aggregation to the lots, 0..1). Their ids are roles in the modeller's role table (D-1394); until every role is set, the
   page lists the missing ones.
@@ -36,13 +39,13 @@ D-1260 in the modeller's decision log.
 
 ## Layout
 
-- `src/Core`: domain, no WordPress (CD-1): the roles it reads, sales and items, the booking plan.
+- `src/Core`: domain, no WordPress (CD-1): the roles it reads, sales and items, the booking plan, the provision lines.
 - `src/WordPress`: the boundary: the model gateway, the service and the admin page.
 - `tests/Core`: PHPUnit, no WordPress.
 
 ## Not yet built
 
-- Bereitstellen onto the Warenausgang place, the shipment record, the eBay shipping page moving here, stock leaving at «Übergeben» (D-1528 stages 2–4); offers, returns, payment.
+- The shipment record, the eBay shipping page moving here, stock leaving at «Übergeben» (D-1528 stages 2–4); offers, returns, payment.
 - A sale entered by hand.
 
 ## Authors

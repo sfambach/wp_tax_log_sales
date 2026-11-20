@@ -41,4 +41,14 @@ final class SalesError extends \RuntimeException
     {
         return new self('no_stage', '', 'The model has no field «Stufe» with its stages yet (D-1528).');
     }
+
+    public static function notEnoughStock(string $item, float $missing): self
+    {
+        return new self('not_enough_stock', $item, 'Not enough free stock for «' . $item . '»: ' . rtrim(rtrim(number_format($missing, 3, '.', ''), '0'), '.') . ' missing.');
+    }
+
+    public static function noOutboundPlace(): self
+    {
+        return new self('no_outbound_place', '', 'There is no place with the function «Warenausgang» yet (D-1528).');
+    }
 }

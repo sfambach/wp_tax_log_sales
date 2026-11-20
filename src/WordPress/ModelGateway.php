@@ -46,6 +46,15 @@ final class ModelGateway
     }
 
     /**
+     * @param list<int> $records
+     * @return array<int, array<int, list<string>>> record → relation → values
+     */
+    public function valuesOf(array $records): array
+    {
+        return $records === [] ? [] : $this->ask(fn (): array => $this->door->valuesOf($records));
+    }
+
+    /**
      * @param list<array<string, mixed>> $changes
      * @return array<string, mixed> the modeller's answer
      */
