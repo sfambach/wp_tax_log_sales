@@ -2,6 +2,7 @@
 
 namespace TaxmodSales\WordPress\Admin;
 
+use Taxmod\Core\Description\InputKind;
 use Taxmod\Core\Tile\Tile;
 use Taxmod\Core\Tile\TileTone;
 use Taxmod\WordPress\Admin\ListPage;
@@ -206,7 +207,7 @@ final class SalesPage
     {
         $form = 'taxmod-sales-assign-' . $item->id;
         $body = $this->service->materialControl($item->id, $form)
-            . '<p><label><input type="checkbox" name="same_article" value="1" form="' . esc_attr($form) . '" checked> '
+            . '<p><label>' . ListPage::field(InputKind::Tick, 'same_article', '1', ['checked' => true, 'form' => $form]) . ' '
             . esc_html__('Gleiche Artikel ohne Material mit zuordnen', 'taxmod-sales') . '</label></p>';
 
         return '<form method="post" id="' . esc_attr($form) . '" action="' . esc_url(admin_url('admin-post.php')) . '">'
