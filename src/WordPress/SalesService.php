@@ -6,6 +6,7 @@ use Taxmod\Core\Role\RoleMap;
 use Taxmod\WordPress\ModelDoor;
 
 use TaxmodSales\Core\BookingPlan;
+use TaxmodSales\Core\Provision;
 use TaxmodSales\Core\Sale;
 use TaxmodSales\Core\Sales;
 use TaxmodSales\Core\SalesError;
@@ -25,6 +26,12 @@ final class SalesService
     public const BOOK_BACKFILL = 'taxmod_stock_book_backfill';
     public const BOOK_SALE = 'taxmod_stock_book_sale';
     public const CANCEL_SALE = 'taxmod_stock_cancel_sale';
+
+    /** D-1528 (Etappe 2): where things lie free, the pick into a box and its taking back, the places of a function. */
+    public const PLACES_OF = 'taxmod_stock_places_of';
+    public const BOOK_PICK = 'taxmod_stock_book_pick';
+    public const CANCEL_PICK = 'taxmod_stock_cancel_pick';
+    public const PLACES_WITH_FUNCTION = 'taxmod_stock_places_with_function';
 
     /** The eBay module's own stage notes (D-985), read only until carried over into the sales (D-1528). */
     public const EBAY_STAGES = 'taxmod_ebay_stages';
@@ -366,6 +373,148 @@ final class SalesService
         }
 
         return array_map(static fn (float $pieces): string => (string) $pieces, $lines);
+    }
+
+    /** Whether the stock module offers what «Bereitstellen» needs (D-1528, Etappe 2). */
+    public function canProvide(): bool
+    {
+        return has_filter(self::PLACES_OF) && has_filter(self::BOOK_PICK) && has_filter(self::CANCEL_PICK) && has_filter(self::PLACES_WITH_FUNCTION);
+    }
+
+    /**
+     * The places with the function «Warenausgang» — the top ones only, the places inside them left out.
+     *
+     * @return array<int, string> place → label
+     */
+    public function outboundPlaces(): array
+    {
+        $places = array_map('intval', (array) $this->stock(self::PLACES_WITH_FUNCTION, ['function' => 'outbound']));
+
+        return $this->labelsOf($places);
+    }
+
+    /**
+     * Where each sale's materials lie free, outside the outbound places — one ask for all sales (CD-7).
+     *
+     * @param list<Sale> $sales
+     * @return array<int, array<int, float>> thing → place → pieces
+     */
+    public function freeOf(array $sales): array
+    {
+        $things = [];
+
+        foreach ($sales as $sale) {
+            foreach ($sale->items as $item) {
+                if ($item->material !== null && ! $item->isBooked()) {
+                    $things[] = $item->material;
+                }
+            }
+        }
+
+        if ($things === []) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ((array) $this->stock(self::PLACES_OF, ['things' => array_values(array_unique($things))]) as $thing => $at) {
+            foreach (is_array($at) ? $at : [] as $place => $pieces) {
+                if (is_numeric($pieces) && (float) $pieces > 0.0) {
+                    $out[(int) $thing][(int) $place] = (float) $pieces;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * «Bereitstellen» (D-1528): each sale's items are picked into the outbound place as one Umbuchung naming the sale, then the
+     * sale moves on to «Packen» — both in one act, so a refusal leaves neither.
+     *
+     * @param list<int> $ids
+     * @return int how many sales were provided
+     */
+    public function provide(array $ids, int $box): int
+    {
+        if (! array_key_exists($box, $this->outboundPlaces())) {
+            throw SalesError::noOutboundPlace();
+        }
+
+        $sales = array_values(array_filter($this->sales(), static fn (Sale $sale): bool => in_array($sale->id, $ids, true) && $sale->stage === Stage::PROVIDE));
+        $free  = $this->freeOf($sales);
+
+        ModelDoor::inAct(function () use ($sales, $free, $box): void {
+            foreach ($sales as $sale) {
+                $lines = Provision::lines($sale, $free);
+
+                foreach ($lines as $line) {
+                    $free[$line['thing']][$line['from']] -= $line['qty'];
+                }
+
+                if ($lines !== []) {
+                    $this->stock(self::BOOK_PICK, [
+                        'reference' => $sale->id, 'place' => $box, 'lines' => $lines, 'date' => current_time('Y-m-d'),
+                        /* translators: %s: the sale's number */
+                        'title' => sprintf(__('Bereitstellen Verkauf %s', 'taxmod-sales'), $sale->number),
+                    ]);
+                }
+            }
+
+            $this->moveStage(array_map(static fn (Sale $sale): int => $sale->id, $sales), Stage::PROVIDE, Stage::PACK);
+        });
+
+        return count($sales);
+    }
+
+    /**
+     * «Packen» back to «Bereitstellen»: what the sale's picks brought into an outbound place goes back where it came from.
+     * A sale whose items were all booked before had nothing picked; it only moves back.
+     *
+     * @param list<int> $ids
+     */
+    public function unprovide(array $ids): int
+    {
+        $sales  = array_values(array_filter($this->sales(), static fn (Sale $sale): bool => in_array($sale->id, $ids, true) && $sale->stage === Stage::PACK));
+        $places = array_keys($this->outboundPlaces());
+
+        ModelDoor::inAct(function () use ($sales, $places): void {
+            foreach ($sales as $sale) {
+                foreach ($places as $box) {
+                    $answer = apply_filters(self::CANCEL_PICK, null, [
+                        'box' => $box, 'reference' => $sale->id, 'date' => current_time('Y-m-d'),
+                        /* translators: %s: the sale's number */
+                        'title' => sprintf(__('Bereitstellung zurück Verkauf %s', 'taxmod-sales'), $sale->number),
+                    ]);
+
+                    // Nothing of this sale in that place is no failure: it was booked before, or lies in another outbound place.
+                    if ($answer instanceof \WP_Error && $answer->get_error_code() !== 'taxmod_stock_nothing_to_book') {
+                        throw SalesError::fromStock($answer->get_error_message());
+                    }
+                }
+            }
+
+            $this->moveStage(array_map(static fn (Sale $sale): int => $sale->id, $sales), Stage::PACK, Stage::PROVIDE);
+        });
+
+        return count($sales);
+    }
+
+    /**
+     * @param list<int> $records
+     * @return array<int, string> record → label, in the order given
+     */
+    public function labelsOf(array $records): array
+    {
+        $values = $this->model->valuesOf($records);
+        $label  = $this->roles()->field('label');
+        $out    = [];
+
+        foreach ($records as $id) {
+            $out[$id] = (string) ($values[$id][$label][0] ?? '#' . $id);
+        }
+
+        return $out;
     }
 
     /**

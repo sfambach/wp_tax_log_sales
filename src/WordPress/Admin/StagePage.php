@@ -28,12 +28,16 @@ final class StagePage
 
     private const NONCE = 'taxmod_sales_stage';
     private const FORM = 'taxmod-sales-stage-bulk';
+    private const STEP_FORM = 'taxmod-sales-stage-step';
 
     /** The page address of a stage, owned here so the boot names it without compiling the page (D-1187). */
     public static function slug(string $stage): string
     {
         return 'taxmod-wa-' . str_replace('_', '-', substr($stage, strlen('stage_')));
     }
+
+    /** @var array<int, string>|null */
+    private ?array $outbound = null;
 
     public function __construct(private readonly string $stage, private readonly SalesService $service = new SalesService())
     {
@@ -110,16 +114,23 @@ final class StagePage
                 ListPage::fail(__('Unbekannte Stufe.', 'taxmod-sales'));
             }
 
-            $forward = $action === self::BULK_NEXT || ($action === self::ACTION && sanitize_key((string) ($_POST['do'] ?? '')) === 'next');
-            $to      = $forward ? Stage::next($stage) : Stage::previous($stage);
-            $ids     = $action === self::ACTION ? [absint($_POST['sale'] ?? 0)] : array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? []))));
+            // A row button says way and sale in one value («next:<id>»): all rows share one form outside the table.
+            [$way, $sale] = array_pad(explode(':', sanitize_text_field(wp_unslash((string) ($_POST['do'] ?? ''))), 2), 2, '');
+            $forward      = $action === self::BULK_NEXT || ($action === self::ACTION && $way === 'next');
+            $to           = $forward ? Stage::next($stage) : Stage::previous($stage);
+            $ids          = $action === self::ACTION ? [absint($sale)] : array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? []))));
 
             if ($to === null || $ids === [] || $ids === [0]) {
                 ListPage::fail(__('Hier geht es nicht weiter.', 'taxmod-sales'));
             }
 
             try {
-                $moved = $this->service->moveStage($ids, $stage, $to);
+                // D-1528 Etappe 2: on from «Bereitstellen» picks into the outbound place, back from «Packen» takes it back.
+                $moved = match (true) {
+                    $stage === Stage::PROVIDE && $forward && $this->service->canProvide() => $this->service->provide($ids, absint($_POST['box'] ?? 0)),
+                    $stage === Stage::PACK && ! $forward && $this->service->canProvide()  => $this->service->unprovide($ids),
+                    default                                                               => $this->service->moveStage($ids, $stage, $to),
+                };
             } catch (SalesError $error) {
                 ListPage::fail($error->getMessage());
             }
@@ -141,13 +152,16 @@ final class StagePage
             /* translators: %s: the previous stage */
             self::BULK_BACK => $previous === null ? '' : sprintf(__('Zurück: %s', 'taxmod-sales'), $names[$previous]),
         ]);
-        // The hidden field stands before the bar: list-head.js finds the bar only right above the table (one row).
-        $html     = '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '" form="' . esc_attr(self::FORM) . '">'
+        // The hidden fields stand before the bar: list-head.js finds the bar only right above the table (one row).
+        $html     = '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '" form="' . esc_attr(self::FORM) . '">' . $this->boxField(self::FORM)
+            . ($canStage ? $this->stepForm() : '')
             . ListPage::bulkBar(self::FORM, self::NONCE, $bulk, '', '', true);
         $rows     = '';
+        [$free, $labels] = $this->whereFree($shown);
 
         foreach ($shown as $sale) {
-            $items = implode('<br>', array_map(static fn (SoldItem $item): string => esc_html(ListPage::number($item->count, 2) . ' × ' . $item->label), $sale->items));
+            $items = implode('<br>', array_map(fn (SoldItem $item): string => esc_html(ListPage::number($item->count, 2) . ' × ' . $item->label)
+                . ($free === null ? '' : $this->lies($item, $free, $labels)), $sale->items));
 
             $rows .= ListPage::row(self::FORM, (string) $sale->id, [
                 ListPage::dateCell($sale->day()),
@@ -169,24 +183,121 @@ final class StagePage
         ], $rows);
     }
 
-    /** Back and on as one little form (one line of icons, D-1500); the button pressed says which way. */
+    /**
+     * On «Bereitstellen» only: where the items lie free and the place names, one ask for the whole list (CD-7).
+     *
+     * @param list<Sale> $shown
+     * @return array{0: array<int, array<int, float>>|null, 1: array<int, string>}
+     */
+    private function whereFree(array $shown): array
+    {
+        if ($this->stage !== Stage::PROVIDE || ! $this->service->canProvide() || $shown === []) {
+            return [null, []];
+        }
+
+        try {
+            $free   = $this->service->freeOf($shown);
+            $places = array_merge(...array_map(static fn (array $at): array => array_keys($at), array_values($free ?: [[]])));
+
+            return [$free, $this->service->labelsOf(array_values(array_unique($places)))];
+        } catch (SalesError) {
+            return [null, []];
+        }
+    }
+
+    /**
+     * @param array<int, array<int, float>> $free
+     * @param array<int, string> $labels
+     */
+    private function lies(SoldItem $item, array $free, array $labels): string
+    {
+        if ($item->isBooked()) {
+            return ' <span class="description">' . esc_html__('(schon abgebucht)', 'taxmod-sales') . '</span>';
+        }
+
+        if ($item->material === null) {
+            return ' <span class="description">' . esc_html__('(kein Material)', 'taxmod-sales') . '</span>';
+        }
+
+        $at = $free[$item->material] ?? [];
+        arsort($at);
+
+        return ' <span class="description">' . ($at === [] ? esc_html__('(kein freier Bestand)', 'taxmod-sales')
+            : esc_html(sprintf(
+                /* translators: %s: places with free pieces */
+                __('(liegt: %s)', 'taxmod-sales'),
+                implode(', ', array_map(static fn (int $place, float $pieces): string => ($labels[$place] ?? '#' . $place) . ' ' . ListPage::number($pieces, 2), array_keys($at), $at))
+            ))) . '</span>';
+    }
+
+    /** The one form every row's step buttons submit; it stands outside the table so the buttons sit in the Actions cell (Prüftor 20.11.). */
+    private function stepForm(): string
+    {
+        return '<form method="post" id="' . esc_attr(self::STEP_FORM) . '" hidden action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            . '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '">' . $this->boxField(self::STEP_FORM) . '</form>';
+    }
+
+    /** Back and on as icons in the row's Actions cell (D-1500); the button pressed says which way and which sale. */
     private function stepButtons(Sale $sale, ?string $previous, ?string $next): string
     {
         $names = self::names();
+        $id    = (string) $sale->id;
 
-        return '<form method="post" class="taxmod-acts" action="' . esc_url(admin_url('admin-post.php')) . '">'
-            . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
-            . '<input type="hidden" name="sale" value="' . esc_attr((string) $sale->id) . '"><input type="hidden" name="stage" value="' . esc_attr($this->stage) . '">'
-            /* translators: %s: the previous stage */
-            . ($previous === null ? '' : ListPage::iconButton(ListPage::ICON_UNDO, sprintf(__('Zurück: %s', 'taxmod-sales'), $names[$previous]), '', 'do', 'back'))
+        /* translators: %s: the previous stage */
+        return ($previous === null ? '' : ListPage::iconButton(ListPage::ICON_UNDO, sprintf(__('Zurück: %s', 'taxmod-sales'), $names[$previous]), '', 'do', 'back:' . $id, self::STEP_FORM))
             /* translators: %s: the next stage */
-            . ($next === null ? '' : ListPage::iconButton('arrow-right-alt', sprintf(__('Weiter: %s', 'taxmod-sales'), $names[$next]), '', 'do', 'next'))
-            . '</form>';
+            . ($next === null ? '' : ' ' . ListPage::iconButton('arrow-right-alt', sprintf(__('Weiter: %s', 'taxmod-sales'), $names[$next]), '', 'do', 'next:' . $id, self::STEP_FORM));
+    }
+
+    /**
+     * The outbound place «Bereitstellen» puts the goods on: the only one, or the one chosen above the list (shared by the row
+     * buttons' and the bulk form through `taxmodSalesBox`).
+     */
+    private function boxField(string $form): string
+    {
+        $places = $this->outbound();
+
+        return count($places) === 1 ? '<input type="hidden" name="box" value="' . esc_attr((string) array_key_first($places)) . '" form="' . esc_attr($form) . '">'
+            : (count($places) > 1 ? '<input type="hidden" name="box" class="taxmod-sales-box" value="' . esc_attr((string) array_key_first($places)) . '" form="' . esc_attr($form) . '">' : '');
+    }
+
+    /** @return array<int, string> outbound place → label; empty outside «Bereitstellen» */
+    private function outbound(): array
+    {
+        if ($this->outbound === null) {
+            try {
+                $this->outbound = $this->stage === Stage::PROVIDE && $this->service->canProvide() ? $this->service->outboundPlaces() : [];
+            } catch (SalesError) {
+                $this->outbound = [];
+            }
+        }
+
+        return $this->outbound;
     }
 
     private function notices(): string
     {
         $html = '';
+
+        if ($this->stage === Stage::PROVIDE && $this->service->canProvide()) {
+            $places = $this->outbound();
+
+            if ($places === []) {
+                $html .= '<div class="notice notice-warning inline"><p>' . esc_html__('Kein Warenausgangsplatz: in Stammdaten › Platzarten einer Platzart die Platzfunktion «Warenausgang» geben und einen Platz davon anlegen.', 'taxmod-sales') . '</p></div>';
+            } elseif (count($places) === 1) {
+                /* translators: %s: the outbound place */
+                $html .= '<p class="description">' . esc_html(sprintf(__('Weiter bucht die Ware auf den Warenausgangsplatz %s.', 'taxmod-sales'), reset($places))) . '</p>';
+            } else {
+                $options = '';
+
+                foreach ($places as $id => $label) {
+                    $options .= '<option value="' . esc_attr((string) $id) . '">' . esc_html($label) . '</option>';
+                }
+
+                $html .= '<p><label>' . esc_html__('Warenausgangsplatz', 'taxmod-sales') . ' <select onchange="document.querySelectorAll(\'.taxmod-sales-box\').forEach(function(f){f.value=this.value;},this)">' . $options . '</select></label></p>';
+            }
+        }
         $n    = absint($_GET['n'] ?? 0);
 
         if (! $this->service->canStage()) {
