@@ -29,7 +29,7 @@ D-1260 in the modeller's decision log.
 ## Requirements
 
 - Taxonomy Modeller 0.2.180 or newer (`ModelDoor`, the shared list page, the one role table D-1394, `ListPage::listHead` D-1526).
-- Taxmod Stock for the navigation; for booking, the stock's sale bookings; for «Bereitstellen» Taxmod Stock 0.64.173 (field
+- Taxmod Stock for the navigation; for booking, the stock's sale bookings; for «Bereitstellen» Taxmod Stock 0.64.177 (field
   «Platzfunktion» on the Platzart, `taxmod_stock_places_with_function`, `taxmod_stock_cancel_pick`).
 - Two fields on «Verkaufte Artikel»: «Material» (record reference to the material node, 0..1) and «Bestandsposten»
   (aggregation to the lots, 0..1). Their ids are roles in the modeller's role table (D-1394); until every role is set, the
