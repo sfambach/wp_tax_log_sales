@@ -28,6 +28,7 @@ final class StagePage
 
     private const NONCE = 'taxmod_sales_stage';
     private const FORM = 'taxmod-sales-stage-bulk';
+    private const STEP_FORM = 'taxmod-sales-stage-step';
 
     /** The page address of a stage, owned here so the boot names it without compiling the page (D-1187). */
     public static function slug(string $stage): string
@@ -110,9 +111,11 @@ final class StagePage
                 ListPage::fail(__('Unbekannte Stufe.', 'taxmod-sales'));
             }
 
-            $forward = $action === self::BULK_NEXT || ($action === self::ACTION && sanitize_key((string) ($_POST['do'] ?? '')) === 'next');
-            $to      = $forward ? Stage::next($stage) : Stage::previous($stage);
-            $ids     = $action === self::ACTION ? [absint($_POST['sale'] ?? 0)] : array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? []))));
+            // A row button says way and sale in one value («next:<id>»): all rows share one form outside the table.
+            [$way, $sale] = array_pad(explode(':', sanitize_text_field(wp_unslash((string) ($_POST['do'] ?? ''))), 2), 2, '');
+            $forward      = $action === self::BULK_NEXT || ($action === self::ACTION && $way === 'next');
+            $to           = $forward ? Stage::next($stage) : Stage::previous($stage);
+            $ids          = $action === self::ACTION ? [absint($sale)] : array_values(array_filter(array_map('absint', (array) ($_POST['selected'] ?? []))));
 
             if ($to === null || $ids === [] || $ids === [0]) {
                 ListPage::fail(__('Hier geht es nicht weiter.', 'taxmod-sales'));
@@ -143,6 +146,7 @@ final class StagePage
         ]);
         // The hidden field stands before the bar: list-head.js finds the bar only right above the table (one row).
         $html     = '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '" form="' . esc_attr(self::FORM) . '">'
+            . ($canStage ? $this->stepForm() : '')
             . ListPage::bulkBar(self::FORM, self::NONCE, $bulk, '', '', true);
         $rows     = '';
 
@@ -169,19 +173,24 @@ final class StagePage
         ], $rows);
     }
 
-    /** Back and on as one little form (one line of icons, D-1500); the button pressed says which way. */
+    /** The one form every row's step buttons submit; it stands outside the table so the buttons sit in the Actions cell (Prüftor 20.11.). */
+    private function stepForm(): string
+    {
+        return '<form method="post" id="' . esc_attr(self::STEP_FORM) . '" hidden action="' . esc_url(admin_url('admin-post.php')) . '">'
+            . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
+            . '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '"></form>';
+    }
+
+    /** Back and on as icons in the row's Actions cell (D-1500); the button pressed says which way and which sale. */
     private function stepButtons(Sale $sale, ?string $previous, ?string $next): string
     {
         $names = self::names();
+        $id    = (string) $sale->id;
 
-        return '<form method="post" class="taxmod-acts" action="' . esc_url(admin_url('admin-post.php')) . '">'
-            . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">'
-            . '<input type="hidden" name="sale" value="' . esc_attr((string) $sale->id) . '"><input type="hidden" name="stage" value="' . esc_attr($this->stage) . '">'
-            /* translators: %s: the previous stage */
-            . ($previous === null ? '' : ListPage::iconButton(ListPage::ICON_UNDO, sprintf(__('Zurück: %s', 'taxmod-sales'), $names[$previous]), '', 'do', 'back'))
+        /* translators: %s: the previous stage */
+        return ($previous === null ? '' : ListPage::iconButton(ListPage::ICON_UNDO, sprintf(__('Zurück: %s', 'taxmod-sales'), $names[$previous]), '', 'do', 'back:' . $id, self::STEP_FORM))
             /* translators: %s: the next stage */
-            . ($next === null ? '' : ListPage::iconButton('arrow-right-alt', sprintf(__('Weiter: %s', 'taxmod-sales'), $names[$next]), '', 'do', 'next'))
-            . '</form>';
+            . ($next === null ? '' : ' ' . ListPage::iconButton('arrow-right-alt', sprintf(__('Weiter: %s', 'taxmod-sales'), $names[$next]), '', 'do', 'next:' . $id, self::STEP_FORM));
     }
 
     private function notices(): string
