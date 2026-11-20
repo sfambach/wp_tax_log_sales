@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       Taxmod Sales
  * Description:       Sales for the Taxonomy Modeller: every sale with its items' material, and its goods issue through Taxmod Stock.
- * Version: 0.0.6
+ * Version: 0.0.7
  * Requires at least: 6.4
  * Requires PHP:      8.2
  * Author:            Stefan Fambach (SteFam), Claude (Anthropic AI)

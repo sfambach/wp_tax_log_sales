@@ -129,7 +129,7 @@ final class SalesPage
                 . ($item->material === null ? ' <em>(' . esc_html__('ohne Material', 'taxmod-sales') . ')</em>' : ''), $sale->items));
 
             $rows .= ListPage::row(self::FORM, (string) $sale->id, [
-                esc_html($sale->day()),
+                ListPage::dateCell($sale->day()),
                 esc_html($sale->platform . ' ' . $sale->number),
                 esc_html($sale->buyer),
                 $items,
@@ -194,7 +194,7 @@ final class SalesPage
                 . match (true) {
                     $item->isBooked()        => '',
                     $item->material !== null => ' ' . $this->postButton(['do' => 'unassign', 'item' => $item->id, 'tab' => $tab], __('Zuordnung lösen', 'taxmod-sales'),
-                        __('Material dieses Artikels wieder entfernen?', 'taxmod-sales')),
+                        __('Material dieses Artikels wieder entfernen?', 'taxmod-sales'), 'editor-unlink'),
                     default                  => ' ' . $this->assignAction($item, $tab),
                 } . '</li>';
         }
@@ -227,20 +227,20 @@ final class SalesPage
         return match ($sale->state()) {
             /* translators: %s: the sale's number */
             Sale::TO_BOOK => $this->postButton(['do' => 'book', 'sale' => $sale->id, 'tab' => $tab], __('Buchen', 'taxmod-sales'),
-                sprintf(__('Verkauf %s buchen? Fehlender Bestand wird zum Verkaufsdatum nacherfasst.', 'taxmod-sales'), $sale->number)),
+                sprintf(__('Verkauf %s buchen? Fehlender Bestand wird zum Verkaufsdatum nacherfasst.', 'taxmod-sales'), $sale->number), ListPage::ICON_STORE),
             /* translators: %s: the sale's number */
             Sale::BOOKED  => $this->postButton(['do' => 'cancel', 'sale' => $sale->id, 'tab' => $tab], __('Buchung zurücknehmen', 'taxmod-sales'),
-                sprintf(__('Buchung von Verkauf %s zurücknehmen? Der Warenausgang wird storniert, nacherfasster Bestand bleibt liegen (D-1262).', 'taxmod-sales'), $sale->number)),
+                sprintf(__('Buchung von Verkauf %s zurücknehmen? Der Warenausgang wird storniert, nacherfasster Bestand bleibt liegen (D-1262).', 'taxmod-sales'), $sale->number), ListPage::ICON_UNDO),
             default       => '',
         };
     }
 
     /**
-     * A one-button form that asks first in the shared dialog (K3) and posts to this page's handler.
+     * A one-button form (an icon square, D-1500) that asks first in the shared dialog (K3) and posts to this page's handler.
      *
      * @param array<string, string|int> $fields
      */
-    private function postButton(array $fields, string $label, string $question): string
+    private function postButton(array $fields, string $label, string $question, string $icon): string
     {
         $hidden = '';
 
@@ -250,7 +250,7 @@ final class SalesPage
 
         return '<form method="post" class="taxmod-acts" action="' . esc_url(admin_url('admin-post.php')) . '" ' . ListPage::confirm($question) . '>'
             . wp_nonce_field(self::NONCE, '_wpnonce', true, false) . '<input type="hidden" name="action" value="' . esc_attr(self::ACTION) . '">' . $hidden
-            . '<button type="submit" class="button">' . esc_html($label) . '</button></form>';
+            . ListPage::iconButton($icon, $label) . '</form>';
     }
 
     private function stockNotice(): string

@@ -11,13 +11,13 @@ use TaxmodSales\WordPress\Admin\SalesPage;
  */
 final class Plugin
 {
-    public const VERSION = '0.0.6';
+    public const VERSION = '0.0.7';
 
     /** The page's address, owned here so the boot names it without compiling the page (D-1187). */
     public const PAGE = 'taxmod-verkauf';
 
-    /** D-1394: the one role table came with the modeller 0.2.118. */
-    private const MODELLER = '0.2.130';
+    /** D-1394: the one role table came with the modeller 0.2.118; dateCell and iconButton with 0.2.172 (D-1500). */
+    private const MODELLER = '0.2.172';
 
     /** The module's name in the role table's declarations. */
     public const ROLE_MODULE = 'sales';
