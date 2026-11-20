@@ -42,7 +42,10 @@ final class StagePage
     public function render(): string
     {
         $names   = self::names();
-        $page    = fn (string $html, string $bar = ''): string => ListPage::page(__('Warenausgang', 'taxmod-sales'), [], [['html' => $html]], Plugin::VERSION, 'Taxmod Sales', '', $bar);
+        $page    = fn (string $html, string $bar = '', ?int $count = null): string => ListPage::page(
+            /* translators: 1: stage, 2: number of sales in it */
+            $count === null ? $names[$this->stage] : sprintf(__('%1$s (%2$s)', 'taxmod-sales'), $names[$this->stage], ListPage::number($count, 0)),
+            [], [['html' => $html]], Plugin::VERSION, 'Taxmod Sales', self::hint($this->stage), $bar);
         $missing = $this->service->missingRoles();
 
         if ($missing !== []) {
@@ -60,8 +63,9 @@ final class StagePage
         $bar    = self::bar($counts, $this->stage);
         $shown  = array_values(array_filter($sales, fn (Sale $sale): bool => $sale->stage === $this->stage));
 
-        return $page(ListPage::listHead($names[$this->stage], count($shown), self::hint($this->stage))
-            . $this->notices() . $this->list($shown), $bar);
+        // Stefan 20.11. 19:52 «das zugestellt könnte in den seiten kopf noch integriert werden»: the stage and its count are the page's
+        // own heading, no second head above the list.
+        return $page($this->notices() . $this->list($shown), $bar, count($shown));
     }
 
     /**
@@ -137,8 +141,9 @@ final class StagePage
             /* translators: %s: the previous stage */
             self::BULK_BACK => $previous === null ? '' : sprintf(__('Zurück: %s', 'taxmod-sales'), $names[$previous]),
         ]);
-        $html     = ListPage::bulkBar(self::FORM, self::NONCE, $bulk, '', '', true)
-            . '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '" form="' . esc_attr(self::FORM) . '">';
+        // The hidden field stands before the bar: list-head.js finds the bar only right above the table (one row).
+        $html     = '<input type="hidden" name="stage" value="' . esc_attr($this->stage) . '" form="' . esc_attr(self::FORM) . '">'
+            . ListPage::bulkBar(self::FORM, self::NONCE, $bulk, '', '', true);
         $rows     = '';
 
         foreach ($shown as $sale) {
