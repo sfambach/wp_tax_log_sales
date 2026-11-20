@@ -120,8 +120,9 @@ final class SalesPage
     {
         $count = sprintf(_n('%d Verkauf', '%d Verkäufe', count($shown), 'taxmod-sales'), count($shown));
         $bulk  = $this->service->canBook() ? [self::BULK_BOOK => __('Buchen', 'taxmod-sales')] : [];
-        $html  = $this->message() . ListPage::bulkBar(self::FORM, self::NONCE, $bulk, $count, '', true)
-            . '<input type="hidden" name="tab" value="' . esc_attr($tab) . '" form="' . esc_attr(self::FORM) . '">';
+        // The hidden field stands before the bar: list-head.js finds the bar only right above the table (one row).
+        $html  = $this->message() . '<input type="hidden" name="tab" value="' . esc_attr($tab) . '" form="' . esc_attr(self::FORM) . '">'
+            . ListPage::bulkBar(self::FORM, self::NONCE, $bulk, $count, '', true);
         $rows  = '';
         $names = self::stateNames();
 
