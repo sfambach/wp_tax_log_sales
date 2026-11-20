@@ -15,16 +15,24 @@ Sales for the [Taxonomy Modeller](https://github.com/sfambach/wp-taxonomy-modele
   goods issue at the stock (`taxmod_stock_cancel_sale` with the sale, a Storno) and empties the items' lots; a recorded lot
   stays, as the proof where the piece came from (D-1262).
 
+- **Warenausgang (D-1528)**: one process for every channel, each stage a screen of its own in the navigation with its open
+  sales: **Verkauft → Bereitstellen → Packen → Etikett → Übergeben → Unterwegs → Zugestellt**. The stage is the field «Stufe»
+  of the sale; menu and process bar read the same count. Until the field is in the model the stages are only shown, read from
+  the eBay shipping page (`taxmod_ebay_stages`); once it is there, they are carried over once and that option is no longer read.
+  Stage 1 moves only the stage: no stock booking, no eBay message yet.
+
 Concept and decisions: [`docs/pakete/verkauf/konzept.md`](https://github.com/sfambach/wp-taxonomy-modeler/blob/main/docs/pakete/verkauf/konzept.md),
 D-1260 in the modeller's decision log.
 
 ## Requirements
 
-- Taxonomy Modeller 0.2.118 or newer (`ModelDoor`, the shared list page, the one role table D-1394).
+- Taxonomy Modeller 0.2.180 or newer (`ModelDoor`, the shared list page, the one role table D-1394, `ListPage::listHead` D-1526).
 - Taxmod Stock for the navigation; for booking, the stock's sale bookings.
 - Two fields on «Verkaufte Artikel»: «Material» (record reference to the material node, 0..1) and «Bestandsposten»
   (aggregation to the lots, 0..1). Their ids are roles in the modeller's role table (D-1394); until every role is set, the
   page lists the missing ones.
+- For the stages: the field «Stufe» on «Verkäufe» pointing at the constants «Warenausgangsstufen» (roles `sale_stage`,
+  `stage_sold` … `stage_delivered`, optional).
 
 ## Layout
 
@@ -34,7 +42,7 @@ D-1260 in the modeller's decision log.
 
 ## Not yet built
 
-- Shipping stages for every channel (the eBay shipping page moves here later), offers, returns, payment.
+- Bereitstellen onto the Warenausgang place, the shipment record, the eBay shipping page moving here, stock leaving at «Übergeben» (D-1528 stages 2–4); offers, returns, payment.
 - A sale entered by hand.
 
 ## Authors

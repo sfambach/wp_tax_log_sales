@@ -9,6 +9,7 @@ use TaxmodSales\Core\BookingPlan;
 use TaxmodSales\Core\Sale;
 use TaxmodSales\Core\Sales;
 use TaxmodSales\Core\SalesError;
+use TaxmodSales\Core\Stage;
 
 /**
  * What the sales page asks and does: the sales as the model holds them, a material for an item, and a sale's booking — always
@@ -24,6 +25,15 @@ final class SalesService
     public const BOOK_BACKFILL = 'taxmod_stock_book_backfill';
     public const BOOK_SALE = 'taxmod_stock_book_sale';
     public const CANCEL_SALE = 'taxmod_stock_cancel_sale';
+
+    /** The eBay module's own stage notes (D-985), read only until carried over into the sales (D-1528). */
+    public const EBAY_STAGES = 'taxmod_ebay_stages';
+
+    /** Set once the eBay page's stages are written into the sales' field. */
+    public const CARRIED_OVER = 'taxmod_sales_stages_carried_over';
+
+    /** The counts of the stages, for the navigation, which must not read every sale on every admin page (CD-7). */
+    public const STAGE_COUNTS = 'taxmod_sales_stage_counts';
 
     /** @var list<Sale>|null */
     private ?array $sales = null;
@@ -73,7 +83,117 @@ final class SalesService
     {
         $s = $this->roles();
 
-        return $this->sales ??= Sales::of($s->field(...), $this->model->records($s->node('sale')), $this->model->records($s->node('sold_item')));
+        if ($this->sales !== null) {
+            return $this->sales;
+        }
+
+        $values = [];
+
+        foreach (Stage::ALL as $stage) {
+            $id = $s->find('values', $stage);
+
+            if ($id !== null) {
+                $values[$id] = $stage;
+            }
+        }
+
+        $carried = (bool) get_option(self::CARRIED_OVER, false);
+        $ebay    = [];
+
+        foreach ($carried ? [] : (array) get_option(self::EBAY_STAGES, []) as $order => $note) {
+            if (is_array($note) && is_string($note['stage'] ?? null)) {
+                $ebay[(string) $order] = $note['stage'];
+            }
+        }
+
+        $this->sales = Sales::of($s->field(...), $this->model->records($s->node('sale')), $this->model->records($s->node('sold_item')),
+            $this->canStage() ? $s->field('sale_stage') : null, $values, $ebay);
+        set_transient(self::STAGE_COUNTS, Stage::counts($this->sales), DAY_IN_SECONDS);
+
+        return $this->sales;
+    }
+
+    /** Whether the model has the field «Stufe» and every stage constant (D-1528); without them the stages are read, not set. */
+    public function canStage(): bool
+    {
+        $s = $this->roles();
+
+        if ($s->find('fields', 'sale_stage') === null) {
+            return false;
+        }
+
+        foreach (Stage::ALL as $stage) {
+            if ($s->find('values', $stage) === null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Moves sales to a stage — one write, one step to take back (D-1410). A sale outside `$from` stays where it is, so a second
+     * click on a stale page moves nothing twice.
+     *
+     * @param list<int> $ids
+     * @return int how many moved
+     */
+    public function moveStage(array $ids, string $from, string $to): int
+    {
+        if (! $this->canStage()) {
+            throw SalesError::noStageField();
+        }
+
+        $s     = $this->roles();
+        $moved = array_values(array_filter($this->sales(), static fn (Sale $sale): bool => in_array($sale->id, $ids, true) && $sale->stage === $from));
+
+        if ($moved === []) {
+            return 0;
+        }
+
+        $counts = Stage::counts($this->sales());
+        $this->model->write(array_map(static fn (Sale $sale): array => ['op' => 'set_values', 'record' => (string) $sale->id,
+            'values' => [(string) $s->field('sale_stage') => (string) $s->value($to)]], $moved));
+        // The door may answer this request's earlier read again, so the navigation's count is moved by hand, not re-read.
+        $counts[$from] -= count($moved);
+        $counts[$to]   += count($moved);
+        set_transient(self::STAGE_COUNTS, $counts, DAY_IN_SECONDS);
+        $this->sales = null;
+
+        return count($moved);
+    }
+
+    /**
+     * Writes the eBay page's stages into the sales once (Prüftor condition 1): the sales whose field is empty take the stage the
+     * eBay page shows; afterwards the option is no longer read. Runs when the stage field is there and has not run yet.
+     *
+     * @return int how many sales were written
+     */
+    public function carryOver(): int
+    {
+        if (! $this->canStage() || get_option(self::CARRIED_OVER, false)) {
+            return 0;
+        }
+
+        $s     = $this->roles();
+        $carry = Sales::toCarryOver($this->sales());
+
+        if ($carry !== []) {
+            $this->model->write(array_map(static fn (int $id, string $stage): array => ['op' => 'set_values', 'record' => (string) $id,
+                'values' => [(string) $s->field('sale_stage') => (string) $s->value($stage)]], array_keys($carry), $carry));
+        }
+
+        update_option(self::CARRIED_OVER, gmdate('c'), false);
+
+        return count($carry);
+    }
+
+    /** @return array<string, int>|null the last counted stages, or null if nothing was counted yet */
+    public static function stageCounts(): ?array
+    {
+        $counts = get_transient(self::STAGE_COUNTS);
+
+        return is_array($counts) ? array_map('intval', $counts) : null;
     }
 
     public function sale(int $id): Sale

@@ -36,4 +36,9 @@ final class SalesError extends \RuntimeException
     {
         return new self('no_stock', '', 'Taxmod Stock does not offer the bookings a sale needs.');
     }
+
+    public static function noStageField(): self
+    {
+        return new self('no_stage', '', 'The model has no field «Stufe» with its stages yet (D-1528).');
+    }
 }
