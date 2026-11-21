@@ -296,7 +296,7 @@ final class StagePage
             $places = $this->outbound();
 
             if ($places === []) {
-                $html .= '<div class="notice notice-warning inline"><p>' . esc_html__('Kein Warenausgangsplatz: in Stammdaten › Platzarten einer Platzart die Platzfunktion «Warenausgang» geben und einen Platz davon anlegen.', 'taxmod-sales') . '</p></div>';
+                $html .= '<div class="notice notice-warning inline"><p>' . esc_html__('Kein Warenausgangsplatz: einem Lagerort die Platzfunktion «Warenausgang» geben.', 'taxmod-sales') . '</p></div>';
             } elseif (count($places) === 1) {
                 /* translators: %s: the outbound place */
                 $html .= '<p class="description">' . esc_html(sprintf(__('Weiter bucht die Ware auf den Warenausgangsplatz %s.', 'taxmod-sales'), reset($places))) . '</p>';
