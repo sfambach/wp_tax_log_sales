@@ -75,7 +75,7 @@ final class SalesPage
         $back = self::url(['tab' => $tab]);
 
         ListPage::act(function () use ($action, $tab): string {
-            if (! current_user_can('manage_options')) {
+            if (! current_user_can(\Taxmod\WordPress\Rights::SELL)) {
                 ListPage::fail(__('Keine Berechtigung.', 'taxmod-sales'));
             }
 
@@ -168,7 +168,7 @@ final class SalesPage
             return $html;
         }
 
-        if (! current_user_can('manage_options')) {
+        if (! current_user_can(\Taxmod\WordPress\Rights::SELL)) {
             return esc_html__('Nicht erlaubt.', 'taxmod-sales');
         }
 
