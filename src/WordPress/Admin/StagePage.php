@@ -95,7 +95,7 @@ final class StagePage
         $back  = self::url($stage ?? Stage::SOLD);
 
         ListPage::act(function () use ($action, $stage): string {
-            if (! current_user_can('manage_options')) {
+            if (! current_user_can(\Taxmod\WordPress\Rights::SELL)) {
                 ListPage::fail(__('Keine Berechtigung.', 'taxmod-sales'));
             }
 

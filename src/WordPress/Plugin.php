@@ -13,13 +13,13 @@ use TaxmodSales\WordPress\Admin\StagePage;
  */
 final class Plugin
 {
-    public const VERSION = '0.0.13';
+    public const VERSION = '0.0.14';
 
     /** The page's address, owned here so the boot names it without compiling the page (D-1187). */
     public const PAGE = 'taxmod-verkauf';
 
-    /** D-1394: the one role table came with the modeller 0.2.118; dateCell and iconButton with 0.2.172 (D-1500); listHead with 0.2.180 (D-1526). */
-    private const MODELLER = '0.2.180';
+    /** D-1394: the one role table came with the modeller 0.2.118; dateCell and iconButton with 0.2.172 (D-1500); listHead with 0.2.180 (D-1526); the rights table with 0.2.237 (D-1585). */
+    private const MODELLER = '0.2.237';
 
     /** The module's name in the role table's declarations. */
     public const ROLE_MODULE = 'sales';
@@ -65,6 +65,7 @@ final class Plugin
                 'slug'   => self::PAGE,
                 'label'  => __('Verkäufe', 'taxmod-sales'),
                 'area'   => 'outbound',
+                'capability' => \Taxmod\WordPress\Rights::SELL,
                 'render' => static fn (): string => (new SalesPage())->render(),
             ];
 
@@ -77,6 +78,7 @@ final class Plugin
                     'slug'     => StagePage::slug($stage),
                     'label'    => $counts === null ? $names[$stage] : sprintf('%s (%s)', $names[$stage], \Taxmod\WordPress\Admin\ListPage::number($counts[$stage] ?? 0, 0)),
                     'area'     => 'outbound',
+                    'capability' => \Taxmod\WordPress\Rights::SELL,
                     'render'   => static fn (): string => (new StagePage($stage))->render(),
                 ];
             }
@@ -85,7 +87,7 @@ final class Plugin
         });
 
         // D-1258/D-1528: the Warenausgang's process bar on its tile page comes from here, before the eBay page's own (priority 10).
-        add_filter('taxmod_logistics_process_bar', static fn (string $html, string $area): string => $area === 'outbound' && $html === '' && current_user_can('manage_options')
+        add_filter('taxmod_logistics_process_bar', static fn (string $html, string $area): string => $area === 'outbound' && $html === '' && current_user_can(\Taxmod\WordPress\Rights::SELL)
             ? StagePage::bar(SalesService::stageCounts())
             : $html, 5, 2);
 
